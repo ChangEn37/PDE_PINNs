@@ -86,6 +86,30 @@ def evaluate_time_solution(model, x_grid, y_grid, time_value, exact_fn: Optional
         return result
 
 
+def evaluate_custom_time_solution(model, x_grid, y_grid, time_value, feature_fn: Callable, exact_fn: Optional[Callable] = None):
+    t_grid = torch.full_like(x_grid.reshape(-1, 1), float(time_value))
+    with torch.no_grad():
+        feature = feature_fn(x_grid.reshape(-1, 1), y_grid.reshape(-1, 1), t_grid)
+        inputs = torch.cat([x_grid.reshape(-1, 1), y_grid.reshape(-1, 1), feature, t_grid], dim=1)
+        pred = model(inputs).reshape_as(x_grid)
+
+        result = {
+            "prediction": pred.detach().cpu(),
+            "x_grid": x_grid.detach().cpu(),
+            "y_grid": y_grid.detach().cpu(),
+            "t_value": float(time_value),
+        }
+
+        if exact_fn is not None:
+            exact = exact_fn(x_grid.reshape(-1, 1), y_grid.reshape(-1, 1), t_grid).reshape_as(x_grid)
+            metrics = relative_error_metrics(pred, exact)
+            result["exact"] = exact.detach().cpu()
+            result["pointwise_relative"] = metrics["pointwise_relative"].reshape_as(x_grid)
+            result["metrics"] = metrics
+
+        return result
+
+
 def evaluate_time_residual(residual_fn: Callable, x_grid, y_grid, time_value):
     t_grid = torch.full_like(x_grid.reshape(-1, 1), float(time_value))
     residual = residual_fn(
@@ -171,3 +195,40 @@ def plot_loss_history(loss_history, title="LM training loss"):
     ax.grid(True)
     fig.tight_layout()
     return fig, ax
+
+
+def plot_prediction_views(result, title_prefix="Prediction", cmap="viridis", zlim=None):
+    x_np = result["x_grid"].numpy()
+    y_np = result["y_grid"].numpy()
+    pred_np = result["prediction"].numpy()
+    t_value = result.get("t_value", None)
+    time_suffix = f", t={t_value:.2f}" if t_value is not None else ""
+
+    fig = plt.figure(figsize=(18, 5))
+
+    ax0 = fig.add_subplot(131)
+    image0 = ax0.contourf(x_np, y_np, pred_np, 50, cmap=cmap)
+    fig.colorbar(image0, ax=ax0)
+    ax0.set_title(f"{title_prefix}{time_suffix}")
+    ax0.set_xlabel("x")
+    ax0.set_ylabel("y")
+    ax0.set_aspect("equal")
+
+    ax1 = fig.add_subplot(132, projection="3d")
+    ax1.plot_surface(x_np, y_np, pred_np, cmap=cmap, edgecolor="none")
+    ax1.set_title(f"Surface{time_suffix}")
+    ax1.set_xlabel("x")
+    ax1.set_ylabel("y")
+    if zlim is not None:
+        ax1.set_zlim(*zlim)
+
+    ax2 = fig.add_subplot(133, projection="3d")
+    ax2.contour3D(x_np, y_np, pred_np, 50, cmap=cmap)
+    ax2.set_title(f"3D contours{time_suffix}")
+    ax2.set_xlabel("x")
+    ax2.set_ylabel("y")
+    if zlim is not None:
+        ax2.set_zlim(*zlim)
+
+    fig.tight_layout()
+    return fig, (ax0, ax1, ax2)

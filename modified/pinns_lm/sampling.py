@@ -90,3 +90,22 @@ def sample_time_initial_slice(count, x_min, x_max, y_min, y_max, device, crack_t
     t = t[mask][:count].view(-1, 1)
     return x.to(device), y.to(device), t.to(device)
 
+
+def sample_moving_interface_collocation(count, x_min, x_max, y_min, y_max, t_min, t_max, alpha_fn, device, crack_tol=1e-8):
+    x = torch.rand(count * 2, 1) * (x_max - x_min) + x_min
+    y = torch.rand(count * 2, 1) * (y_max - y_min) + y_min
+    t = torch.rand(count * 2, 1) * (t_max - t_min) + t_min
+    alpha_value = alpha_fn(t)
+    dist_to_crack = torch.abs(y - alpha_value * x) / torch.sqrt(1.0 + alpha_value**2)
+    mask = (dist_to_crack >= crack_tol).squeeze(1)
+    x = x[mask][:count].view(-1, 1)
+    y = y[mask][:count].view(-1, 1)
+    t = t[mask][:count].view(-1, 1)
+    return x.to(device), y.to(device), t.to(device)
+
+
+def sample_moving_interface_boundary(count, t_min, t_max, alpha_fn, device, crack_end=1.0):
+    t = torch.rand(count, 1, device=device) * (t_max - t_min) + t_min
+    x_vals = torch.linspace(0, crack_end, count, device=device).unsqueeze(1)
+    y_vals = x_vals * alpha_fn(t)
+    return x_vals, y_vals, t
